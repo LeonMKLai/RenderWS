@@ -23,32 +23,57 @@ const server = http.createServer((req, res) => {
 // 將 WebSocket 伺服器連接到 HTTP 伺服器上
 const wss = new WebSocket.Server({ server });
 
+// 用於生成 Client ID 的計數器
+let clientCounter = 0;
+
 // 當有新的 WebSocket 連接建立時
 wss.on('connection', (ws) => {
-  console.log('Client connected');
+  // 為新連接的客戶端分配一個獨特的 ID
+  clientCounter++;
+  ws.id = clientCounter; // 將 ID 附加到 websocket 對象上，方便後續使用
+  console.log(`Client ${ws.id} connected`);
+
+  // *** 新增: 連接建立成功後，發送帶有 Client ID 的歡迎訊息給這個特定客戶端 ***
+  ws.send(`Say Hello, Client ${ws.id}`);
+  console.log(`Sent initial greeting to Client ${ws.id}`);
 
   // 當從客戶端收到訊息時
   ws.on('message', (message) => {
     // message 可能是 Buffer，如果確定是字串，可以 toString()
     const receivedMessage = message.toString();
-    console.log(`Received message => ${receivedMessage}`);
+    console.log(`Received message from Client ${ws.id}: ${receivedMessage}`);
 
-    // 回覆訊息給客戶端 (echo 功能)
-    ws.send(`Server received: ${receivedMessage}`);
+    // *** 新增: 將收到的訊息廣播給所有連接中的客戶端 ***
+    // 遍歷所有連接到伺服器的客戶端
+    wss.clients.forEach((client) => {
+      // 檢查客戶端是否處於開啟狀態 (連接是活動的)
+      if (client.readyState === WebSocket.OPEN) {
+        // 構建要廣播的訊息 (可以包含發送者的 ID)
+        const broadcastMessage = `Client ${ws.id}: ${receivedMessage}`;
+        // 將訊息發送給這個客戶端
+        client.send(broadcastMessage);
+        console.log(`Broadcasted message to Client ${client.id}`);
+      }
+    });
+
+    // *** 移除原來的 ws.send(...) echo 功能 ***
+    // 原來是 ws.send(`Server received: ${receivedMessage}`);
   });
 
   // 當連接關閉時
   ws.on('close', () => {
-    console.log('Client disconnected');
+    console.log(`Client ${ws.id} disconnected`);
+    // wss.clients Set 會自動管理連接的移除
   });
 
   // 當連接發生錯誤時
   ws.on('error', (error) => {
-    console.error(`WebSocket error: ${error}`);
+    console.error(`WebSocket error for Client ${ws.id}: ${error}`);
+    // 錯誤發生後，連接通常會被關閉，也會觸發 close 事件
   });
 
-  // 連接建立成功後發送一條歡迎訊息
-  ws.send('Welcome to the simple WebSocket server!');
+  // *** 移除原來的連接建立後發送的通用歡迎訊息 ***
+  // 原來是 ws.send('Welcome to the simple WebSocket server!');
 });
 
 // 啟動 HTTP 伺服器並監聽指定的 Port
